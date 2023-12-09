@@ -1,0 +1,30 @@
+<!-- templates/yourapp/your_model_list.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Board site</title>
+</head>
+<body>
+    <h2>Board Posts</h2>
+    
+    <a href="{% url 'message-post' %}">Create new post</a>
+<br>
+    <!-- Display the list of objects -->
+    {% for object in object_list %}
+        <div style="text-align: center;border:3px solid green;margin-top:20px;margin-bottom:20px;">
+            <img src="{{ object.image }}" width="200" alt="">
+            <p>{{ object.content | safe }}</p>
+            Author: {{ object.owner.username }}
+            ID: {{ object.id }}
+
+            {% if request.user == object.owner %}
+                <form action="{% url 'message-delete' pk=object.pk %}" method="post">
+                    <input type="submit" value="Delete">
+                </form>
+            {% endif %}
+        </div>
+    {% endfor %}
+
+
+</body>
+</html>
